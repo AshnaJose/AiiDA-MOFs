@@ -1,0 +1,144 @@
+
+AiiDA on Jean-Zay
+
+1.	Installation on local computer: https://aiida.readthedocs.io/projects/aiida-core/en/latest/intro/install_system.html#intro-get-started-system-wide-install
+Prerequisites (see url for MAC/Windows):
+$ sudo apt install git python3-dev python3-pip postgresql postgresql-server-dev-all postgresql-client rabbitmq-server
+
+Installing AiiDa using conda:
+$ conda create -yn aiida -c conda-forge aiida-core (python version 3.11.5)
+$ conda activate aiida
+
+Set-up profile:
+$ verdi quicksetup                        
+$ Profile name [quicksetup]: any_profile_name
+$ Email Address (for sharing data) [()]: my.name@univ.fr
+$ First name [()]: my
+$ Last name [()]: name
+$ Institution [()]: Institution   
+Trying to become 'postgres' user. You may be asked for your 'sudo' password.
+$ [sudo] password for my: enter local password
+Trying to become 'postgres' user. You may be asked for your 'sudo' password.
+Success: created new profile `any_profile_name`.
+Success: storage initialisation completed.
+
+(aiida) :~$ verdi daemon start 2
+Starting the daemon with 2 workers... OK
+
+
+2. Set-up Jean-Zay
+(aiida) :~$ verdi computer setup
+Computer label: jeanzay
+Hostname: jean-zay
+Description []: 
+Transport plugin: core.ssh
+Scheduler plugin: core.slurm
+Shebang line (first line of each script, starting with #!) [#!/bin/bash]: 
+Work directory on the computer [/scratch/{username}/aiida/]: /gpfsscratch/rech/project_name_on_jean-zay/username_on_jean-zay/aiida
+Mpirun command [mpirun -np {tot_num_mpiprocs}]: srun
+Default number of CPUs per machine: 40
+Default amount of memory per machine (kB).: 250000000
+Escape CLI arguments in double quotes [y/N]: 
+Select an editor.  To change later, run 'select-editor'.
+  1. /bin/nano        <---- easiest
+  2. /usr/bin/vim.basic
+  3. /usr/bin/vim.tiny
+  4. /usr/bin/emacs
+  5. /bin/ed
+Choose 1-5 [1]: 2
+Success: Computer<1> jeanzay created
+
+(aiida) :~$ verdi computer configure core.ssh jeanzay -n --safe-interval 60
+Report: Configuring computer jeanzay for user my.name@univ.fr.
+Success: jeanzay successfully configured for my.name@univ.fr
+(aiida) :~$ verdi computer list
+Report: List of configured computers
+Report: Use 'verdi computer show COMPUTERLABEL' to display more detailed information
+* jeanzay
+
+3. Access Jean-Zay via AiiDa
+
+(aiida) :~$ vi .ssh/config
+Host rotule.univ-grenoble-alpes.fr
+   IdentityFile ~/.ssh/id_rsa
+Host jean-zay
+  Port 2224
+  User username_on_jean-zay
+  HostName localhost
+  ForwardX11 yes
+  #ProxyJump username_on_rotule@rotule.univ-grenoble-alpes.fr
+  IdentityFile ~/.ssh/id_rsa
+
+(aiida) :~$ ssh username_on_jean-zay@127.0.0.1 -p 2224
+[username_on_jean-zay@jean-zay1: ~]$ exit
+Connection to 127.0.0.1 closed.
+
+(aiida) :~$ verdi shell
+Python 3.12.0 | packaged by conda-forge | (main, Oct  3 2023, 08:43:22) [GCC 12.3.0]
+Type 'copyright', 'credits' or 'license' for more information
+IPython 8.17.2 -- An enhanced Interactive Python. Type '?' for help.
+In [1]: com = load_computer('jeanzay')
+In [2]: com
+Out[2]: <Computer: jeanzay (jean-zay), pk: 1>
+In [3]: com.hostname
+Out[3]: 'jean-zay'
+In [4]: com.hostname = "127.0.0.1"
+In [5]: com.set_property("hostname", "127.0.0.1")
+In [6]: com.hostname
+Out[6]: '127.0.0.1'
+In [7]: com.set_default_memory_per_machine(None)
+In [7]:                                                                         
+Do you really want to exit ([y]/n)? 
+
+(aiida) :~$ verdi computer configure core.ssh jeanzay
+Report: enter ? for help.
+Report: enter ! to ignore the default and set no value.
+User name [username_on_jean-zay]: 
+Port number [2224]: 
+Look for keys [Y/n]: 
+SSH key file []: 
+Connection timeout in s [60]: 
+Allow ssh agent [Y/n]: 
+SSH proxy jump []: 
+SSH proxy command []: 
+Compress file transfers [Y/n]: 
+GSS auth [False]: 
+GSS kex [False]: 
+GSS deleg_creds [False]: 
+GSS host [jean-zay]: 
+Load system host keys [Y/n]: 
+Key policy (RejectPolicy, WarningPolicy, AutoAddPolicy) [RejectPolicy]: 
+Use login shell when executing command [Y/n]: 
+Connection cooldown time (s) [60.0]: 
+Report: Configuring computer jeanzay for user my.name@univ.fr.
+Success: jeanzay successfully configured for my.name@univ.fr
+
+(aiida) :~$ verdi computer test jeanzay 
+Report: Testing computer<jeanzay> for user<my.name@univ.fr>...
+Success: all 6 tests succeeded
+
+4. Install Quantum Espresso plugins: https://aiidaquantumespresso.readthedocs.io/en/latest/index.html
+(aiida) :~$ pip install aiida-quantumespresso
+(aiida) :~$eval "$(_AIIDA_QUANTUMESPRESSO_COMPLETE=bash_source aiida-quantumespresso)"
+
+5. Set-up pw.x
+(aiida) :~$ verdi code create core.code.installed -n --computer jeanzay --label pw --default-calc-job-plugin quantumespresso.pw --filepath-executable pw.x
+Success: Created InstalledCode<1>
+(aiida) :~$ pip install aiida-pseudo
+
+Set default pseudos
+(aiida) :~$ aiida-pseudo install sssp -x PBEsol
+Success: installed `SSSP/1.3/PBEsol/efficiency` containing 103 pseudopotentials.
+
+(aiida) :~$ verdi code export pw@jeanzay pw.yaml
+(aiida) :~$ vi pw.yaml 
+#add additional commands required in the job file for Jean-Zay
+SBATCH –A project_name@cpu
+SBATCH –p partition_name
+SBATCH --hint=nomultithread
+
+module purge
+module load module_required
+
+(aiida) :~$ verdi code create core.code.installed --config pw.yaml 
+Success: Created InstalledCode<111>
